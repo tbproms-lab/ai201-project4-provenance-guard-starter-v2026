@@ -293,15 +293,15 @@ The log is append-only: the original `decided` entry is untouched and the appeal
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I used AI to analyze my criteria
+- *What came back:* It showed me the holes in it and how to make it more solid.
+- *What I changed:* I fixed the suggestions it made so that my criteria actually measures the application.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I had AI do the code for my stylometery.py
+- *What came back:* It did as I asked
+- *What I changed:* I adjusted some of the signaling and stylometry decisions and asked it to recode it based on the things I pointed out.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
