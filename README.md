@@ -101,20 +101,20 @@ above 0.35 and below 0.65: unsure
 
 **A case where my two signals split, and what my rule does with it:** Suppose the AI detector returns 0.95 and stylometry returns 0.20. The weighted average would be (0.6 × 0.95) + (0.4 × 0.20) = 0.65, which would be just enough for the AI label. But the signals differ by 0.75, which is greater than 0.40, so the combined score is set to 0.5 and the submission is labelled "unsure." I would rather acknowledge disagreement between the signals than risk incorrectly accusing someone of submitting AI-generated writing.
 
-**A real split from testing:** "I like dogs. They are nice. My dog is big and he is brown, and he runs very fast every day in the park near my house with me and my sister." (plain, child-like human writing). Model signal 0.694 (common words, very predictable, so it looks AI), style signal 0.283 (lumpy sentence lengths, so it looks human). Gap 0.41 > 0.40, so `combine_signals` returns 0.5, which falls in the unsure band. A plain average would have given 0.53, so here the override changes the number only slightly, but it stops a plain writer's text from ever being pushed toward "AI" by the model signal alone.
+**The closest split I found in testing:** "I like dogs. They are nice. My dog is big and he is brown, and he runs very fast every day in the park near my house with me and my sister." (plain, child-like human writing). Model signal 0.694 (common words, very predictable, so it looks AI), style signal 0.320 (lumpy sentence lengths, so it looks human). Gap 0.37, just under the 0.40 override, so the weighted average (0.545) is used and lands in "unsure". The model signal alone would have said "probably AI" for a plain human writer; the style signal is what stops that. No real text I've tried has crossed the 0.40 gap since I fixed the style signal, so the override itself is only exercised by the hypothetical above; unit 8's attack set is where it will get tested.
 
-**How the style signal is built** (`stylometry.py::style_signal`, higher = more AI-like): 0.5 x sentence-length spread (stdev/mean; 0 maps to 1.0, 0.7 or more maps to 0.0; a one-sentence text counts as no spread) + 0.2 x type-token ratio over the first 100 words (0.9 unique maps to 0.0, 0.6 or less maps to 1.0; the weakest measure, since it depends on length and topic) + 0.3 x punctuation variety (number of different marks among `, ; : ( ) " ! ? -`; 0 kinds maps to 1.0, 4 or more maps to 0.0). Weights and the 0.40 disagreement gap are in `config.py` (`WEIGHT_*`, `DISAGREEMENT_THRESHOLD`).
+**How the style signal is built** (`stylometry.py::style_signal`, higher = more AI-like): 0.6 x sentence-length spread (stdev/mean; 0 maps to 1.0, 0.7 or more maps to 0.0; a one-sentence text counts as no spread) + 0.4 x punctuation variety (number of different marks among `, ; : ( ) " ! ? em dash`; 0 kinds maps to 1.0, 5 or more maps to 0.0). I first also blended in type-token ratio (weight 0.2), then dropped it: on my test texts it was about 0.85 for AI, casual human and formal human alike, so it carried no signal and pulled a clearly-AI paragraph's style score toward human (that paragraph's combined score missed the AI label by 0.011). The function still exists in `stylometry.py` but isn't used in the score. Weights and the 0.40 disagreement gap are in `config.py` (`WEIGHT_*`, `DISAGREEMENT_THRESHOLD`).
 
 **Four calibration inputs** (both signals printed separately):
 
 | Input | model | style | combined |
 |---|---|---|---|
-| clearly AI | 0.830 | 0.653 | 0.759 |
-| clearly human | 0.389 | 0.190 | 0.309 |
-| formal human (Westphalia paragraph) | 0.556 | 0.246 | 0.432 |
-| lightly-edited AI | 0.622 | 0.349 | 0.513 |
+| clearly AI | 0.830 | 0.823 | 0.827 |
+| clearly human | 0.389 | 0.240 | 0.330 |
+| formal human (Westphalia paragraph) | 0.556 | 0.321 | 0.462 |
+| lightly-edited AI | 0.622 | 0.469 | 0.561 |
 
-Clearly AI and clearly human land about 0.45 apart. Formal human and edited AI both land in the middle, which is the honest answer: edited AI has partly lost the shape the style signal looks for, so it reads as unsure rather than AI. The style signal runs lower than the model signal on every input, so it pulls scores toward human.
+Clearly AI and clearly human land about 0.5 apart. Formal human and edited AI both land in the middle, which is the honest answer: edited AI has partly lost the shape the style signal looks for, so it reads as unsure rather than AI. The style signal usually runs lower than the model signal on human text, so it pulls scores toward human.
 
 
 
@@ -165,13 +165,13 @@ $ curl -X POST http://127.0.0.1:5001/submit \
 
 ```json
 {
-  "combined_score": 0.513,
-  "confidence": 0.513,
-  "content_id": "c_3cbc3c602d41",
+  "combined_score": 0.5609,
+  "confidence": 0.5609,
+  "content_id": "c_c5b0345b84e4",
   "guess": "unsure",
   "label": "We can't tell whether this was written by a person or with help from AI. That's about the limits of our tools, not a judgment about you. If you'd like someone to look at it, you can appeal.",
   "model_score": 0.6223,
-  "style_score": 0.349
+  "style_score": 0.4688
 }
 ```
 
@@ -179,25 +179,25 @@ The other two label outcomes (lengthy inputs omitted; the human one is a casual 
 
 ```json
 {
-  "combined_score": 0.3083,
-  "confidence": 0.3083,
-  "content_id": "c_d60878b1714f",
+  "combined_score": 0.3253,
+  "confidence": 0.3253,
+  "content_id": "c_d5a5f62a4d5b",
   "guess": "human",
   "label": "We think this was probably written by a person.",
   "model_score": 0.3821,
-  "style_score": 0.1976
+  "style_score": 0.24
 }
 ```
 
 ```json
 {
-  "combined_score": 0.7589,
-  "confidence": 0.7589,
-  "content_id": "c_936ec78b38df",
+  "combined_score": 0.8269,
+  "confidence": 0.8269,
+  "content_id": "c_0493739ed3ed",
   "guess": "ai",
   "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
   "model_score": 0.8295,
-  "style_score": 0.6529
+  "style_score": 0.823
 }
 ```
 
@@ -216,12 +216,12 @@ $ curl -X POST http://127.0.0.1:5001/submit -H "Content-Type: application/json" 
 ```bash
 $ curl -X POST http://127.0.0.1:5001/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "c_3cbc3c602d41", "reasoning": "I wrote this myself for a class blog post."}'
+  -d '{"content_id": "c_c5b0345b84e4", "reasoning": "I wrote this myself for a class blog post."}'
 ```
 
 ```json
 {
-  "content_id": "c_3cbc3c602d41",
+  "content_id": "c_c5b0345b84e4",
   "message": "Thanks. Your appeal has been recorded and this item is now under review.",
   "status": "under_review"
 }
@@ -242,45 +242,45 @@ $ curl "http://127.0.0.1:5001/log"
 ```json
 [
   {
-    "combined_score": 0.3083,
-    "content_id": "c_d60878b1714f",
+    "combined_score": 0.3253,
+    "content_id": "c_d5a5f62a4d5b",
     "creator_id": "tolu",
     "guess": "human",
     "label": "We think this was probably written by a person.",
     "model_score": 0.3821,
     "status": "decided",
-    "style_score": 0.1976,
-    "timestamp": "2026-10-31T21:45:35+00:00"
+    "style_score": 0.24,
+    "timestamp": "2026-10-31T21:50:56+00:00"
   },
   {
-    "combined_score": 0.513,
-    "content_id": "c_3cbc3c602d41",
+    "combined_score": 0.5609,
+    "content_id": "c_c5b0345b84e4",
     "creator_id": "tolu",
     "guess": "unsure",
     "label": "We can't tell whether this was written by a person or with help from AI. That's about the limits of our tools, not a judgment about you. If you'd like someone to look at it, you can appeal.",
     "model_score": 0.6223,
     "status": "decided",
-    "style_score": 0.349,
-    "timestamp": "2026-10-31T21:45:35+00:00"
+    "style_score": 0.4688,
+    "timestamp": "2026-10-31T21:50:56+00:00"
   },
   {
-    "combined_score": 0.7589,
-    "content_id": "c_936ec78b38df",
+    "combined_score": 0.8269,
+    "content_id": "c_0493739ed3ed",
     "creator_id": "tolu",
     "guess": "ai",
     "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
     "model_score": 0.8295,
     "status": "decided",
-    "style_score": 0.6529,
-    "timestamp": "2026-10-31T21:45:35+00:00"
+    "style_score": 0.823,
+    "timestamp": "2026-10-31T21:50:56+00:00"
   },
   {
-    "content_id": "c_3cbc3c602d41",
+    "content_id": "c_c5b0345b84e4",
     "creator_id": "tolu",
     "event": "appeal",
     "reasoning": "I wrote this myself for a class blog post.",
     "status": "under_review",
-    "timestamp": "2026-10-31T21:45:35+00:00"
+    "timestamp": "2026-10-31T21:50:56+00:00"
   }
 ]
 ```

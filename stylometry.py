@@ -144,15 +144,15 @@ def style_signal(text: str) -> float:
     # Each measure is turned into a 0-1 "AI-ish" score (1 = AI-ish), then
     # blended. Direction and scale:
     #   spread  : coefficient of variation. 0 (all sentences equal) -> 1.0,
-    #             >= 0.7 (lumpy) -> 0.0.            weight 0.5
-    #   ttr     : first 100 words. >= 0.9 unique -> 0.0, <= 0.6 -> 1.0.
-    #             Weak (length/topic dependent).    weight 0.2
+    #             >= 0.7 (lumpy) -> 0.0.            weight 0.6
     #   punct   : kinds of punctuation used (, ; : () " ! ? em dash). 0 kinds
-    #             -> 1.0, 4+ kinds -> 0.0.          weight 0.3
+    #             -> 1.0, 5+ kinds -> 0.0.          weight 0.4
+    # type_token_ratio is deliberately NOT in the blend: on our test texts it
+    # was ~0.85 for AI, casual human and formal human alike, so it carried no
+    # signal, and it dragged a clearly-AI paragraph's style score toward human.
     spread_ai = 1.0 - _clamp(sentence_length_spread(text) / 0.7)
-    ttr_ai = _clamp((0.9 - type_token_ratio(text)) / 0.3)
-    punct_ai = 1.0 - _clamp(punctuation_variety(text) / 4)
-    score = 0.5 * spread_ai + 0.2 * ttr_ai + 0.3 * punct_ai
+    punct_ai = 1.0 - _clamp(punctuation_variety(text) / 5)
+    score = 0.6 * spread_ai + 0.4 * punct_ai
     return round(_clamp(score), 4)
 
 
