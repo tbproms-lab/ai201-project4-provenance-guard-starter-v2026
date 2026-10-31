@@ -18,8 +18,8 @@ doesn't, it's the service itself.
 Routes:
 
     POST /ping        the worked example. Already works. Don't edit it
-    POST /submit      ← YOU BUILD THIS (Milestone 3, 4, 5)
-    POST /appeal      ← YOU BUILD THIS (Milestone 5)
+    POST /submit      built (Milestones 3-5)
+    POST /appeal      built (Milestone 5)
     GET  /log         the audit log. Already works
     GET  /health      is the service up, and is the model loaded
 """
@@ -155,7 +155,7 @@ def health():
 def submit():
     """
     Take a piece of text, decide about it, log the decision, answer.
-    ← TODO — Milestones 3, 4 and 5
+   
 
     Expects JSON:
         {"text": "...", "creator_id": "..."}
@@ -225,7 +225,7 @@ def submit():
     # Log the decision. The content_id is what /appeal needs later.
     content_id = f"c_{uuid.uuid4().hex[:12]}"
     combined = scoring.combine_signals(model_score, style_score)
-    guess, label = scoring.score_to_label(combined)  # label text: Milestone 5
+    guess, label = scoring.score_to_label(combined)
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
@@ -241,7 +241,7 @@ def submit():
         "content_id": content_id,
         "guess": guess,
         "confidence": combined,
-        "label": label,               # placeholder text until Milestone 5
+        "label": label,
         "model_score": model_score,
         "style_score": style_score,
         "combined_score": combined,
@@ -251,7 +251,7 @@ def submit():
 @app.post("/appeal")
 def appeal():
     """
-    A writer says you got it wrong. ← TODO — Milestone 5
+    A writer says you got it wrong.
 
     Expects JSON:
         {"content_id": "...", "reasoning": "..."}
@@ -268,14 +268,30 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
 
-    # TODO: delete this and build the route.
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({"error": "bad_request", "message": "Send JSON with a \"content_id\"."}), 400
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({"error": "bad_request", "message": "Tell us why you think this is wrong, in \"reasoning\"."}), 400
+
+    # A typo'd id must fail loudly, not quietly write an orphan appeal.
+    history = audit.entries_for(content_id)
+    if not history:
+        return jsonify({"error": "not_found", "message": f"No submission with content_id \"{content_id}\"."}), 404
+
+    creator_id = history[0].get("creator_id", "unknown")
+    audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning)
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "message": "Thanks. Your appeal has been recorded and this item is now under review.",
+    }), 200
 
 
 # ── Already works ─────────────────────────────────────────────────────────────
