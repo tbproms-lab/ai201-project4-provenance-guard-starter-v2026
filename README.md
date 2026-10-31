@@ -139,15 +139,61 @@ Below 0.30: Likely human-written
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
+Milestone 3 state: only the model signal is real; `guess`, `confidence`, `label` and `style_score` are placeholders. (Port 5001 because macOS AirPlay holds 5000.)
+
 ```bash
-$ curl -X POST http://127.0.0.1:5000/submit \
+$ curl -X POST http://127.0.0.1:5001/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "The meeting went fine. We talked about the budget and the schedule. Everyone agreed to meet again next week.", "creator_id": "tolu"}'
 ```
 
 ```json
-
+{
+  "confidence": 0.5,
+  "content_id": "c_f0b3b9ec5939",
+  "guess": "unsure",
+  "label": "not built yet",
+  "model_score": 0.6977,
+  "style_score": null
+}
 ```
+
+Empty text is rejected:
+
+```bash
+$ curl -X POST http://127.0.0.1:5001/submit -H "Content-Type: application/json" -d '{"text": ""}'
+```
+
+```json
+{"error": "bad_request", "message": "Send JSON with a non-empty \"text\"."}
+```
+
+The log entry landed (`GET /log`):
+
+```bash
+$ curl "http://127.0.0.1:5001/log?limit=5"
+```
+
+```json
+{
+  "count": 1,
+  "entries": [
+    {
+      "combined_score": null,
+      "content_id": "c_f0b3b9ec5939",
+      "creator_id": "tolu",
+      "guess": "unsure",
+      "label": null,
+      "model_score": 0.6977,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-10-31T21:39:46+00:00"
+    }
+  ]
+}
+```
+
+Signal run alone (`python detector.py "..."`): formulaic AI-style text scored 0.8241, a casual human anecdote 0.3014, and plain "in between" text 0.6977 (leaning AI, which is the plain-writing blind spot).
 
 **An appeal**
 

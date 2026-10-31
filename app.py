@@ -199,17 +199,45 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    import detector
 
-    # TODO: delete this and build the route.
+    # JSON goes in: pull text and creator_id out of the body.
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    text = payload.get("text")
+    creator_id = payload.get("creator_id", "unknown")
+
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({"error": "bad_request", "message": "Send JSON with a non-empty \"text\"."}), 400
+
+    # One real signal (tested first with: python detector.py "some text").
+    try:
+        model_score = detector.model_signal(text)
+    except ValueError as exc:  # too short to score
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    except detector.DetectorUnavailable as exc:
+        return jsonify({"error": "detector_unavailable", "message": str(exc)}), 503
+
+    # Log the decision. The content_id is what /appeal needs later.
+    content_id = f"c_{uuid.uuid4().hex[:12]}"
+    guess = "unsure"  # placeholder until Milestone 4/5
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        status="decided",
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "guess": guess,
+        "confidence": 0.5,            # placeholder — Milestone 4
+        "label": "not built yet",     # placeholder — Milestone 5
+        "model_score": model_score,
+        "style_score": None,          # Milestone 4
+    }), 200
 
 
 @app.post("/appeal")
