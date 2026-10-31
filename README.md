@@ -39,7 +39,13 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
-
+1. Submission: A writer submits a piece of writing to the website.
+2. Flask endpoint (/submit): The backend receives the text as JSON.
+3. Detector (detector.py): The existing AI model analyzes the text and returns a score.
+4. Stylometry (stylometry.py): The code measures features of the writing, such as sentence lengths and vocabulary variation.
+5. Score combination: The service combines the two signals into one score.
+6. Decision: The service compares that score against set thresholds to determine whether it's likely AI, likely human, or uncertain.
+7. Response: The service returns a JSON response containing the score and a label a reader can understand.
 
 ---
 
@@ -53,35 +59,47 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** Patterns in the writing that the model associates with AI-generated text.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** AI-generated writing may contain statistical patterns that differ from typical human writing.
 
-**What it can't see:**
+**What it can't see:** The detector may incorrectly identify human writing as AI-generated, especially when the writing is very structured or polished. It may also fail to recognize AI-generated writing that differs from its training examples.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** Writing-style features such as average sentence length, variation in sentence length, and vocabulary diversity.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** Some AI-generated writing may have more consistent sentence structures
 
-**What it can't see:**
+**What it can't see:** Human writers can have consistent writing styles, and AI can generate writing with varied sentence structures and vocabulary. Stylometry alone cannot reliably determine who wrote something.
 
 ### The combining rule
 
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** I will calculate the combined score using a weighted average of the two signals, giving the AI detector slightly more weight than stylometry. If the two signals strongly disagree, the system will classify the submission as uncertain rather than making a confident decision. This helps reduce the risk of falsely accusing a human writer of using AI.
 
-**The numbers:**
+**The numbers:** The AI detector contributes 60% and stylometry contributes 40%.
+
+Combined score = (0.6 × detector score) + (0.4 × stylometry score)
+
+If the difference between the two scores is greater than 0.40, the final label will be "uncertain," regardless of the combined score.
+
+Otherwise, the classification thresholds are:
+
+Below 0.30: Likely human-written
+
+0.30 to below 0.90: Uncertain
+
+0.90 or above: Likely AI-generated
 
 **Where it lives:** `scoring.py::combine_signals`
 
 <!-- ⚠️ The grader checks your code against that line. If your rule lives
      somewhere else, say where. -->
 
-**A case where my two signals split, and what my rule does with it:**
+**A case where my two signals split, and what my rule does with it:** Suppose the AI detector returns 0.95 and stylometry returns 0.20. The combined score would be (0.6 × 0.95) + (0.4 × 0.20) = 0.65. Since the two signals differ by 0.75, which is greater than 0.40, the system would label the submission as "uncertain." I would rather acknowledge disagreement between the signals than risk incorrectly accusing someone of submitting AI-generated writing.
 
 
 
