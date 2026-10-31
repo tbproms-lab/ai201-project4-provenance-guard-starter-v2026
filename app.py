@@ -200,6 +200,8 @@ def submit():
     a malformed input is one of the most common real failures there is.
     """
     import detector
+    import scoring
+    import stylometry
 
     # JSON goes in: pull text and creator_id out of the body.
     payload = request.get_json(silent=True)
@@ -214,6 +216,7 @@ def submit():
     # One real signal (tested first with: python detector.py "some text").
     try:
         model_score = detector.model_signal(text)
+        style_score = stylometry.style_signal(text)
     except ValueError as exc:  # too short to score
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
     except detector.DetectorUnavailable as exc:
@@ -221,22 +224,27 @@ def submit():
 
     # Log the decision. The content_id is what /appeal needs later.
     content_id = f"c_{uuid.uuid4().hex[:12]}"
-    guess = "unsure"  # placeholder until Milestone 4/5
+    combined = scoring.combine_signals(model_score, style_score)
+    guess, label = scoring.score_to_label(combined)  # label text: Milestone 5
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
         guess=guess,
         model_score=model_score,
+        style_score=style_score,
+        combined_score=combined,
+        label=label,
         status="decided",
     )
 
     return jsonify({
         "content_id": content_id,
         "guess": guess,
-        "confidence": 0.5,            # placeholder — Milestone 4
-        "label": "not built yet",     # placeholder — Milestone 5
+        "confidence": combined,
+        "label": label,               # placeholder text until Milestone 5
         "model_score": model_score,
-        "style_score": None,          # Milestone 4
+        "style_score": style_score,
+        "combined_score": combined,
     }), 200
 
 

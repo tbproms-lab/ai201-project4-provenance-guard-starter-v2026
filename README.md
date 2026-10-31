@@ -101,6 +101,21 @@ Below 0.30: Likely human-written
 
 **A case where my two signals split, and what my rule does with it:** Suppose the AI detector returns 0.95 and stylometry returns 0.20. The combined score would be (0.6 × 0.95) + (0.4 × 0.20) = 0.65. Since the two signals differ by 0.75, which is greater than 0.40, the system would label the submission as "uncertain." I would rather acknowledge disagreement between the signals than risk incorrectly accusing someone of submitting AI-generated writing.
 
+**A real split from testing:** "I like dogs. They are nice. My dog is big and he is brown, and he runs very fast every day in the park near my house with me and my sister." (plain, child-like human writing). Model signal 0.694 (common words, very predictable, so it looks AI), style signal 0.283 (lumpy sentence lengths, so it looks human). Gap 0.41 > 0.40, so `combine_signals` returns 0.5, which falls in the unsure band. A plain average would have given 0.53, so here the override changes the number only slightly, but it also stops a plain writer's text from ever being pushed toward "AI" by the model signal alone.
+
+**How the style signal is built** (`stylometry.py::style_signal`, higher = more AI-like): 0.5 x sentence-length spread (stdev/mean; 0 maps to 1.0, 0.7 or more maps to 0.0; a one-sentence text counts as no spread) + 0.2 x type-token ratio over the first 100 words (0.9 unique maps to 0.0, 0.6 or less maps to 1.0; the weakest measure, since it depends on length and topic) + 0.3 x punctuation variety (number of different marks among `, ; : ( ) " ! ? -`; 0 kinds maps to 1.0, 4 or more maps to 0.0). Weights and the 0.40 disagreement gap are in `config.py` (`WEIGHT_*`, `DISAGREEMENT_THRESHOLD`). Note: the thresholds listed above (0.30 / 0.90) are not yet what `config.py` uses (0.35 / 0.65); I'll reconcile them in Milestone 5.
+
+**Four calibration inputs** (both signals printed separately):
+
+| Input | model | style | combined |
+|---|---|---|---|
+| clearly AI | 0.830 | 0.653 | 0.759 |
+| clearly human | 0.389 | 0.190 | 0.309 |
+| formal human (Westphalia paragraph) | 0.556 | 0.246 | 0.432 |
+| lightly-edited AI | 0.622 | 0.349 | 0.513 |
+
+Clearly AI and clearly human land about 0.45 apart. Formal human and edited AI both land in the middle, which is the honest answer: edited AI has partly lost the shape the style signal looks for, so it reads as unsure rather than AI. The style signal runs lower than the model signal on every input, so it pulls scores toward human.
+
 
 
 ---

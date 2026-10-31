@@ -1,1 +1,2 @@
 {"timestamp": "2026-10-31T21:39:46+00:00", "content_id": "c_f0b3b9ec5939", "creator_id": "tolu", "guess": "unsure", "model_score": 0.6977, "style_score": null, "combined_score": null, "label": null, "status": "decided"}
+{"timestamp": "2026-10-31T21:42:28+00:00", "content_id": "c_767bdc169e3d", "creator_id": "tolu", "guess": "ai", "model_score": 0.859, "style_score": 0.6634, "combined_score": 0.7808, "label": "PLACEHOLDER — write the high-confidence AI label.", "status": "decided"}

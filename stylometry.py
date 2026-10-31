@@ -34,6 +34,13 @@ import re
 import statistics
 
 
+TTR_WINDOW = 100
+
+
+def _clamp(x: float) -> float:
+    return min(max(x, 0.0), 1.0)
+
+
 def sentences(text: str) -> list[str]:
     """Split into sentences. Rough and good enough — given to you."""
     parts = re.split(r"(?<=[.!?])\s+", text.strip())
@@ -64,8 +71,12 @@ def sentence_length_spread(text: str) -> float:
     `stdev` raises on fewer than two values. Decide what that should return
     before the attack set decides for you.
     """
-    # TODO: replace this
-    return 0.0
+    lengths = [len(words(s)) for s in sentences(text)]
+    lengths = [n for n in lengths if n > 0]
+    if len(lengths) < 2:
+        return 0.0  # one sentence has no spread; reads as "even", the AI-ish end
+    mean = statistics.mean(lengths)
+    return statistics.stdev(lengths) / mean if mean else 0.0
 
 
 def type_token_ratio(text: str) -> float:
@@ -80,8 +91,8 @@ def type_token_ratio(text: str) -> float:
     directly comparable on it, and if your test inputs vary a lot in length,
     that alone can look like a signal.
     """
-    # TODO: replace this
-    return 0.0
+    w = words(text)[:TTR_WINDOW]  # fixed window so long and short texts compare
+    return len(set(w)) / len(w) if w else 0.0
 
 
 def punctuation_density(text: str) -> float:
@@ -94,8 +105,16 @@ def punctuation_density(text: str) -> float:
         more interesting than full stops, because they vary more between
         writers.
     """
-    # TODO: replace this
-    return 0.0
+    w = words(text)
+    if not w:
+        return 0.0
+    marks = len(re.findall(r"[,;:()\u2014\u2013\"!?-]", text))
+    return marks / len(w)
+
+
+def punctuation_variety(text: str) -> int:
+    """How many different interesting punctuation marks appear."""
+    return len({m for m in re.findall(r"[,;:()\u2014\"!?]", text)})
 
 
 # ── Combining them ───────────────────────────────────────────────────────────
@@ -122,8 +141,19 @@ def style_signal(text: str) -> float:
     you trust it. Plain and ordinary, not formal: formal prose reads as *human*
     to signal one, and it is plain writing that gets accused.
     """
-    # TODO: replace this
-    return 0.5
+    # Each measure is turned into a 0-1 "AI-ish" score (1 = AI-ish), then
+    # blended. Direction and scale:
+    #   spread  : coefficient of variation. 0 (all sentences equal) -> 1.0,
+    #             >= 0.7 (lumpy) -> 0.0.            weight 0.5
+    #   ttr     : first 100 words. >= 0.9 unique -> 0.0, <= 0.6 -> 1.0.
+    #             Weak (length/topic dependent).    weight 0.2
+    #   punct   : kinds of punctuation used (, ; : () " ! ? em dash). 0 kinds
+    #             -> 1.0, 4+ kinds -> 0.0.          weight 0.3
+    spread_ai = 1.0 - _clamp(sentence_length_spread(text) / 0.7)
+    ttr_ai = _clamp((0.9 - type_token_ratio(text)) / 0.3)
+    punct_ai = 1.0 - _clamp(punctuation_variety(text) / 4)
+    score = 0.5 * spread_ai + 0.2 * ttr_ai + 0.3 * punct_ai
+    return round(_clamp(score), 4)
 
 
 if __name__ == "__main__":
@@ -139,4 +169,3 @@ if __name__ == "__main__":
     print(f"type_token_ratio         {type_token_ratio(text)}")
     print(f"punctuation_density      {punctuation_density(text)}")
     print(f"style_signal             {style_signal(text)}   (higher = more likely AI)")
-    print("\nAll zeros? These are stubs — Milestone 4 is where you build them.")
