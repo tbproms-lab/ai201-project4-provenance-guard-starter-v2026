@@ -46,59 +46,46 @@ Two things worth knowing before you pick numbers:
 
 <!-- Your criterion. It must name a number. -->
 
+Out of 10 pieces of writing that I know were written by humans, no more than 1 should be labeled "Likely AI-generated."
 
-
-**Why this target:**
-
-
+**Why this target:** I want to minimize false accusations because incorrectly labeling someone's original work as AI-generated can damage their trust in the platform.
 
 ---
 
 ## 2.
 
 <!-- Your criterion. -->
+When testing 10 human-written and 10 AI-generated samples, the average combined score for AI-generated writing should be at least 0.20 higher than the average score for human writing.
 
 
-
-**Why this target:**
-
-
+**Why this target:** I want the system to show a noticeable difference between human and AI writing, even if it cannot classify every submission correctly.
 
 ---
 
 ## 3.
 
 <!-- Your criterion. -->
+All three labels ("Likely human-written," "Uncertain," and "Likely AI-generated") should appear at least once when testing the system with scores designed to reach each classification.
 
-
-
-**Why this target:**
-
-
+**Why this target:** I want to make sure all three labels work, especially "Uncertain," since the system should not always force a decision.
 
 ---
 
 ## 4.
 
 <!-- Your criterion. -->
+When I submit 5 valid appeals, all 5 should receive a unique appeal ID, be recorded, and return a status of "pending_review."
 
-
-
-**Why this target:**
-
-
+**Why this target:** Writers should always have a way to challenge a classification, and their appeals should not get lost.
 
 ---
 
 ## 5.
 
 <!-- Your criterion. -->
+When testing the /submit endpoint with a missing text field, an empty string, and text longer than 10,000 characters, all 3 requests should return a clear error message instead of crashing the server.
 
-
-
-**Why this target:**
-
-
+**Why this target:** The system should handle invalid inputs without breaking or producing misleading results.
 
 ---
 
