@@ -324,6 +324,8 @@ A real writer submits a few pieces an hour. Even revising one draft repeatedly, 
 
 (`python run_attacks.py --flood 15 --url http://127.0.0.1:5001`; I used port 5001 because macOS AirPlay Receiver occupies 5000 and answers 403. Report written to `results/flood_2026-11-07_1507.md`.)
 
+**Decisions record the settings in force.** Each decision entry also stores the signal weights, the disagreement threshold and the human/AI thresholds used, so an old entry stays explainable after I retune.
+
 **Rejections are logged too.** Rate-limited requests, missing/empty text (400), too-short text (400) and detector failures (503) each write a `rejected` entry to the audit log with a `reason`, so an attack that is turned away still leaves a trace.
 
 ---

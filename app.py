@@ -243,6 +243,12 @@ def submit():
         combined_score=combined,
         label=label,
         status="decided",
+        # Settings in force, so this entry stays explainable after retuning.
+        weight_model=config.WEIGHT_MODEL_SIGNAL,
+        weight_style=config.WEIGHT_STYLE_SIGNAL,
+        disagreement_threshold=config.DISAGREEMENT_THRESHOLD,
+        human_threshold=config.HUMAN_THRESHOLD,
+        ai_threshold=config.AI_THRESHOLD,
     )
 
     return jsonify({
