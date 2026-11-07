@@ -96,7 +96,8 @@ AI_THRESHOLD = 0.65
 # an hour, and a script sending a thousand variations to map your thresholds.
 # Your README has to say why your numbers and not others.
 
-RATE_LIMITING_ENABLED = True
+# Default ON. Set AI201_RATE_LIMITS=0 for detector-only attack runs.
+RATE_LIMITING_ENABLED = os.getenv("AI201_RATE_LIMITS", "1") == "1"
 
 # Per creator_id: a writer revising a draft fits in 5/min; a script gets 50 probes a day.
 RATE_LIMIT_PER_MINUTE = 5
