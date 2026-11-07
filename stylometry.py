@@ -49,11 +49,7 @@ def sentences(text: str) -> list[str]:
 
 def words(text: str) -> list[str]:
     """Split into lowercase words, punctuation stripped. Given to you."""
-    # \w is Unicode-aware, so accented Latin, Cyrillic, Arabic, Hebrew and so on
-    # count as words. (The original [a-z0-9'] saw none of them, which sent every
-    # non-ASCII text to a style score of exactly 1.0.) Scripts written without
-    # spaces, like Chinese, still come out as very few "words".
-    return re.findall(r"[^\W_]+(?:'[^\W_]+)*|[^\W_]+", text.lower())
+    return re.findall(r"[a-z0-9']+", text.lower())
 
 
 # ── The three measures — YOU BUILD THESE ─────────────────────────────────────

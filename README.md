@@ -830,9 +830,9 @@ Stage: **the route** (`app.py::submit`). It validates that `text` is present and
 - Repeated characters are the most predictable text a language model can see, so `model_signal` also saturates (0.997 for "aaaa…").
 - The route (`app.py::submit`) accepts anything non-empty, so nothing stops this reaching the detector.
 
-**Correction, found in the after run:** fixing the tokenizer did *not* fix MF07. Its Arabic text now tokenises correctly (17 words), but it is a single sentence, and `stylometry.py::sentence_length_spread` returns 0.0 for one sentence ("no spread, reads as AI-ish"), so `style_signal` is still exactly 1.0. MF07 therefore had **two stacked mechanisms**, the ASCII-only tokenizer and the one-sentence default, and I had only named the first. The one-sentence default also hits genuine one-sentence submissions in any language: they start from a style score of about 0.6.
+**Correction, found while testing the fix:** I first believed the ASCII-only tokenizer was the whole story for MF07. It is not. When I fixed the tokenizer, the Arabic text became 17 words, but it is a single sentence, and `stylometry.py::sentence_length_spread` returns 0.0 for one sentence ("no spread, reads as AI-ish"), so `style_signal` was still exactly 1.0. MF07 has **two stacked mechanisms**, the tokenizer and the one-sentence default. I tried the tokenizer fix, measured it on its own, and dropped it; see The Improvement. The one-sentence default also hits genuine one-sentence submissions in any language: they start from a style score of about 0.6.
 
-The consequence is worse than the attack suggests (this applied before the tokenizer fix): **a real person writing in Arabic, Hebrew, Chinese, Russian or any non-Latin script would start from a style score of 1.0.** Accented Latin text is also affected, since `words()` splits "compré" into "compr".
+The consequence is worse than the attack suggests: **a real person writing in Arabic, Hebrew, Chinese, Russian or any non-Latin script would start from a style score of 1.0.** Accented Latin text is also affected, since `words()` splits "compré" into "compr".
 
 **Held, but only by luck** (not diagnosed as broken, but worth noting): FP06 and FP07 (human writing with a model score of 0.88) and EV01 and EV08 (AI text whose model score fell to 0.16 and 0.25) all ended up `unsure` solely because the disagreement rule pulled a split score to 0.5. That rule is doing all the work the signals aren't.
 
@@ -847,90 +847,101 @@ The consequence is worse than the attack suggests (this applied before the token
 
 ## The Improvement
 
-**What I changed:** two things, both aimed at the same failure: input that isn't scoreable prose was being scored anyway.
-1. **Signal two's tokenizer** (`stylometry.py::words`): the pattern `[a-z0-9']` only matched unaccented ASCII letters, so accented Latin text was chopped up and any non-Latin script (Arabic, Hebrew, Cyrillic, and so on) produced zero words and an automatic style score of 1.0. It now uses a Unicode-aware pattern. On the 20 English texts in my criteria scenarios every style score is identical to four decimals, so ordinary scoring is unchanged.
-2. **Input checks in the route** (`app.py::submit`, limits in `config.py`): text over `MAX_TEXT_CHARS = 10,000` is refused with a **413** and `text_too_long`; text with fewer than `MIN_WORDS = 5` words is refused with a **400** and `not_enough_words`. Both write a rejection to the audit log. I chose 5 because the shortest genuine submission in the attack set ("Went for a run. Legs hurt. Worth it.", 8 words) still passes.
+**What I changed (one change): validate the input in the route.** `app.py::submit` now refuses text that isn't scoreable prose *before* either signal sees it:
+- text longer than `MAX_TEXT_CHARS = 10,000` gets a **413** and `text_too_long`;
+- text with fewer than `MIN_WORDS = 5` words gets a **400** and `not_enough_words`.
 
-**Which diagnosis pointed at it:** the criterion 5 diagnosis (the route never checked length) and the MF05, MF06 and MF07 diagnosis (junk input reached both signals, and the style tokenizer saw no words in non-Latin text).
+Both write a rejection to the audit log, and both limits live in `config.py`. I chose 5 words because the shortest genuine submission in the attack set ("Went for a run. Legs hurt. Worth it.", 8 words) still passes.
+
+**Which diagnosis pointed at it:** the criterion 5 diagnosis (the route never checked length) and the MF05, MF06 and MF07 diagnosis (junk input reached both signals, which read it as maximally machine-like).
 
 I did not touch the false-positive problem (criteria 1 and 2). That is the largest failure in the run and it comes from signal one, which this change does not affect. I chose the smaller fix on purpose; see What's Still Broken.
 
+**What I tried and dropped.** My first version of this improvement also fixed the ASCII-only tokenizer in `stylometry.py::words`. I measured the two edits separately by running the attack set with the route checks alone and with both, and the tokenizer fix did not help; it hurt:
+
+| Row | Before | Route checks only (kept) | Tokenizer fix + route checks (dropped) |
+|---|---|---|---|
+| MF03, MF04, MF05, MF06, MF08, RQ06 | 200 (MF05/MF06 AI at 0.998) | refused (400 / 413) | refused (400 / 413) |
+| **MF07** (Arabic, one sentence) | 200, **AI 0.944** | **refused (400)** | 200, **AI 0.944** (back to broke) |
+
+The reason: with the old tokenizer, Arabic text has *zero* words, so the route's 5-word check refuses it. With the fixed tokenizer it has 17 words, so it passes the check, reaches the scorer, and the one-sentence default (see the diagnosis) gives it a style score of 1.0. So the tokenizer fix on its own fixed no attack row, and combined with the route checks it undid one of them. It only makes sense paired with a fix to the one-sentence default, which would be a second change, so I reverted it. The both-changes run is kept for the record in `results/attack_run_2026-11-07_1548_ablation_tokenizer_plus_route.md` and `results/run_2026-11-07_1548_ablation_tokenizer_plus_route.md`.
+
 ### Attack Run — After
 
-`python run_attacks.py --set attack_set --label after`, rate limiting off, same service and nothing else changed. Full output: `results/attack_run_2026-11-07_1548_after.md`. Marked by the same rules as the before run.
+`python run_attacks.py --set attack_set --label after`, rate limiting off, route checks the only change. Full output: `results/attack_run_2026-11-07_1553_after.md`. Marked by the same rules as the before run. Each cell is status, guess, combined score.
 
-**Count: 49 held, 7 broke, out of 56** (before: 47 held, 9 broke). 50 of the 56 rows are identical to the before run.
+**Count: 50 held, 6 broke, out of 56** (before: 47 held, 9 broke). 49 of the 56 rows are identical to the before run.
 
-| ID | Family | Status | Guess | Score | Verdict | Change from before |
+| ID | Family | Before | After | Before verdict | After verdict | Change |
 |---|---|---|---|---|---|---|
-| EV01 | evasion | 200 | unsure | 0.500 | HELD | unchanged |
-| EV02 | evasion | 200 | unsure | 0.485 | HELD | unchanged |
-| EV03 | evasion | 200 | unsure | 0.520 | HELD | unchanged |
-| EV04 | evasion | 200 | ai | 0.675 | HELD | unchanged |
-| EV05 | evasion | 200 | human | 0.297 | BROKE | unchanged |
-| EV06 | evasion | 200 | unsure | 0.472 | HELD | unchanged |
-| EV07 | evasion | 200 | ai | 0.656 | HELD | unchanged |
-| EV08 | evasion | 200 | unsure | 0.500 | HELD | unchanged |
-| EV09 | evasion | 200 | unsure | 0.630 | HELD | unchanged |
-| EV10 | evasion | 200 | ai | 0.853 | HELD | unchanged |
-| FP01 | false_positive | 200 | unsure | 0.582 | HELD | unchanged |
-| FP02 | false_positive | 200 | ai | 0.729 | BROKE | unchanged |
-| FP03 | false_positive | 200 | ai | 0.770 | BROKE | unchanged |
-| FP04 | false_positive | 200 | ai | 0.742 | BROKE | unchanged |
-| FP05 | false_positive | 200 | ai | 0.753 | BROKE | unchanged |
-| FP06 | false_positive | 200 | unsure | 0.500 | HELD | unchanged |
-| FP07 | false_positive | 200 | unsure | 0.500 | HELD | unchanged |
-| FP08 | false_positive | 200 | unsure | 0.445 | HELD | unchanged |
-| PI01 | prompt_injection | 200 | unsure | 0.450 | HELD | unchanged |
-| PI02 | prompt_injection | 200 | human | 0.235 | BROKE | unchanged |
-| PI03 | prompt_injection | 200 | unsure | 0.543 | HELD | unchanged |
-| PI04 | prompt_injection | 200 | unsure | 0.468 | HELD | unchanged |
-| PI05 | prompt_injection | 200 | unsure | 0.526 | HELD | unchanged |
-| PI06 | prompt_injection | 200 | unsure | 0.550 | HELD | unchanged |
-| MF01 | malformed | 400 | — | — | HELD | unchanged |
-| MF02 | malformed | 400 | — | — | HELD | unchanged |
-| MF03 | malformed | 400 | — | — | HELD | now refused: under 5 words (was 200 unsure) |
-| MF04 | malformed | 400 | — | — | HELD | now refused: no words (was 200 unsure) |
-| MF05 | malformed | 400 | — | — | HELD | now refused: one word (was AI 0.9986) |
-| MF06 | malformed | 400 | — | — | HELD | now refused: no words (was AI 0.998) |
-| MF07 | malformed | 200 | ai | 0.944 | BROKE | STILL BROKE: one sentence, style score still 1.0 |
-| MF08 | malformed | 413 | — | — | HELD | now refused: 413 over 10,000 characters (was 200) |
-| RQ01 | malformed | 400 | — | — | HELD | unchanged |
-| RQ02 | malformed | 200 | unsure | 0.500 | HELD | unchanged |
-| RQ03 | malformed | 400 | — | — | HELD | unchanged |
-| RQ04 | malformed | 400 | — | — | HELD | unchanged |
-| RQ05 | malformed | 400 | — | — | HELD | unchanged |
-| RQ06 | malformed | 400 | — | — | HELD | now refused: only 3 words of text (was 200; the row tests creator_id, not length) |
-| RQ07 | malformed | 400 | — | — | HELD | unchanged |
-| RQ08 | malformed | 400 | — | — | HELD | unchanged |
-| RQ09 | malformed | 400 | — | — | HELD | unchanged |
-| RQ10 | malformed | 400 | — | — | HELD | unchanged |
-| RQ11 | malformed | 400 | — | — | HELD | unchanged |
-| RQ12 | malformed | 400 | — | — | HELD | unchanged |
-| FL01_01 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_02 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_03 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_04 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_05 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_06 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_07 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_08 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_09 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_10 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_11 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
-| FL01_12 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| EV01 | evasion | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| EV02 | evasion | 200 unsure 0.485 | 200 unsure 0.485 | HELD | HELD | unchanged |
+| EV03 | evasion | 200 unsure 0.520 | 200 unsure 0.520 | HELD | HELD | unchanged |
+| EV04 | evasion | 200 ai 0.675 | 200 ai 0.675 | HELD | HELD | unchanged |
+| EV05 | evasion | 200 human 0.297 | 200 human 0.297 | BROKE | BROKE | unchanged |
+| EV06 | evasion | 200 unsure 0.472 | 200 unsure 0.472 | HELD | HELD | unchanged |
+| EV07 | evasion | 200 ai 0.656 | 200 ai 0.656 | HELD | HELD | unchanged |
+| EV08 | evasion | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| EV09 | evasion | 200 unsure 0.630 | 200 unsure 0.630 | HELD | HELD | unchanged |
+| EV10 | evasion | 200 ai 0.853 | 200 ai 0.853 | HELD | HELD | unchanged |
+| FP01 | false_positive | 200 unsure 0.582 | 200 unsure 0.582 | HELD | HELD | unchanged |
+| FP02 | false_positive | 200 ai 0.729 | 200 ai 0.729 | BROKE | BROKE | unchanged |
+| FP03 | false_positive | 200 ai 0.770 | 200 ai 0.770 | BROKE | BROKE | unchanged |
+| FP04 | false_positive | 200 ai 0.742 | 200 ai 0.742 | BROKE | BROKE | unchanged |
+| FP05 | false_positive | 200 ai 0.753 | 200 ai 0.753 | BROKE | BROKE | unchanged |
+| FP06 | false_positive | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FP07 | false_positive | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FP08 | false_positive | 200 unsure 0.445 | 200 unsure 0.445 | HELD | HELD | unchanged |
+| PI01 | prompt_injection | 200 unsure 0.450 | 200 unsure 0.450 | HELD | HELD | unchanged |
+| PI02 | prompt_injection | 200 human 0.235 | 200 human 0.235 | BROKE | BROKE | unchanged |
+| PI03 | prompt_injection | 200 unsure 0.543 | 200 unsure 0.543 | HELD | HELD | unchanged |
+| PI04 | prompt_injection | 200 unsure 0.468 | 200 unsure 0.468 | HELD | HELD | unchanged |
+| PI05 | prompt_injection | 200 unsure 0.526 | 200 unsure 0.526 | HELD | HELD | unchanged |
+| PI06 | prompt_injection | 200 unsure 0.550 | 200 unsure 0.550 | HELD | HELD | unchanged |
+| MF01 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| MF02 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| MF03 | malformed | 200 unsure 0.500 | 400 — — | HELD | HELD | now refused: under 5 words |
+| MF04 | malformed | 200 unsure 0.500 | 400 — — | HELD | HELD | now refused: no words |
+| MF05 | malformed | 200 ai 0.999 | 400 — — | BROKE | HELD | now refused: one word |
+| MF06 | malformed | 200 ai 0.998 | 400 — — | BROKE | HELD | now refused: no words |
+| MF07 | malformed | 200 ai 0.944 | 400 — — | BROKE | HELD | now refused (no ASCII words); see ablation |
+| MF08 | malformed | 200 unsure 0.500 | 413 — — | HELD | HELD | now 413: over 10,000 characters |
+| RQ01 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ02 | malformed | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| RQ03 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ04 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ05 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ06 | malformed | 200 unsure 0.500 | 400 — — | HELD | HELD | now refused: text has 3 words (row tests creator_id, not length) |
+| RQ07 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ08 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ09 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ10 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ11 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| RQ12 | malformed | 400 — — | 400 — — | HELD | HELD | unchanged |
+| FL01_01 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_02 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_03 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_04 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_05 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_06 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_07 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_08 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_09 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_10 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_11 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
+| FL01_12 | flood_same_creator | 200 unsure 0.500 | 200 unsure 0.500 | HELD | HELD | unchanged |
 
-**Criteria, after** (`python run_eval.py --label after`, three trials, `results/run_2026-11-07_1548_after.md`; all trials identical again):
+**Criteria, after** (`python run_eval.py --label after`, three trials, `results/run_2026-11-07_1553_after.md`). Same format as the before run log; the three trials were identical again:
 
-| Criterion | Target | Before | After | Verdict |
-|---|---|---|---|---|
-| 1. False positives on my own writing | At most 1 of 10 labelled AI | 4 of 10 | 4 of 10 | **MISSED** (unchanged) |
-| 2. Score spread | At least 0.20 | 0.171 | 0.171 | **MISSED** (unchanged) |
-| 3. Label coverage | All three labels appear | human, unsure, ai | human, unsure, ai | **MET** |
-| 4. Appeal path | 5 of 5 with unique ID and `pending_review` | no ID; `under_review` | same | **MISSED** (unchanged) |
-| 5. Bad input | All three bad inputs get a clear error | 400, 400, **200** | 400, 400, **413** | **MET** (was MISSED) |
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. False positives on my own writing | At most 1 of 10 labelled AI | 4 of 10 labelled AI | 4 of 10 | 4 of 10 | **MISSED** (unchanged) |
+| 2. Score spread | Average AI score at least 0.20 above average human score | 0.765 − 0.594 = 0.171 | 0.171 | 0.171 | **MISSED** (unchanged) |
+| 3. Label coverage | All three labels appear at least once | human, unsure, ai | human, unsure, ai | human, unsure, ai | **MET** |
+| 4. Appeal path | 5 of 5 appeals get a unique appeal ID, are recorded, return `pending_review` | 5 recorded; no appeal ID; status `under_review` | same | same | **MISSED** (unchanged) |
+| 5. Bad input | Missing text, empty text and over 10,000 characters all return a clear error | 400, 400, **413** | 400, 400, 413 | 400, 400, 413 | **MET** (was MISSED) |
 
-Real output for criterion 5, trial 1, from `results/run_2026-11-07_1548_after.md` (`run_eval.py::main` calling `app.py::submit`):
+Real output for criterion 5, trial 1, from `results/run_2026-11-07_1553_after.md` (`run_eval.py::main` calling `app.py::submit`):
 
 ```json
 [
@@ -967,17 +978,15 @@ Real output for criterion 5, trial 1, from `results/run_2026-11-07_1548_after.md
 and the audit log entry the 413 left behind (`app.py::submit` calling `audit.py::log_rejection`):
 
 ```json
-{"timestamp": "2026-11-07T20:48:27+00:00", "creator_id": "eval_bad_huge", "event": "rejected", "status": "rejected", "reason": "text_too_long", "status_code": 413, "length": 13750}
+{"timestamp": "2026-11-07T20:53:41+00:00", "creator_id": "eval_bad_huge", "event": "rejected", "status": "rejected", "reason": "text_too_long", "status_code": 413, "length": 13750}
 ```
 
 **Did it help, and how do I know:**
-It helped where it was aimed, and nowhere else, which is the result I expected. Criterion 5 went from MISSED to MET in all three trials. MF05 and MF06 (repeated "a", emoji) went from a confident AI verdict to a refusal, and MF03, MF04, MF08 are now refused instead of scored. Everything else is identical, which is also evidence: I changed nothing that touches signal one or the combining rule, and the 20 English style scores did not move.
-
-It did not fully work. **MF07** (Arabic, one sentence) is still labelled AI at 0.944: the tokenizer fix removed one mechanism and the one-sentence default in `sentence_length_spread` supplied the same result. I only found that because I re-ran it; my first diagnosis had named only the tokenizer.
+It helped where it was aimed, and nowhere else, which is what I expected from a change that touches neither signal. Criterion 5 went from MISSED to MET in all three trials. MF05 and MF06 (repeated "a", emoji) went from a confident AI verdict to a refusal, MF07 (Arabic) went from AI at 0.944 to a refusal, and MF03, MF04 and MF08 are now refused instead of scored. Broke went from 9 to 6, and the six that remain are exactly the false-positive and evasion rows that come from signal one. Criteria 1, 2 and 4 are unchanged to four decimals, as they should be: the evidence is the identical scores in the before and after runs.
 
 **What it cost.** This is a trade, not a free fix:
 - Any real text under 5 words is now refused. "Thanks, see you soon." (4 words) would be turned away instead of scored. For a provenance tool that is arguably right, because there isn't enough to judge, but it is a behaviour change for real writers.
-- A text that is not prose in a script the tokenizer can't split into words (Chinese, Japanese) will usually be refused as `not_enough_words`. That is an honest "we can't score this" instead of a false accusation, but it means the service still doesn't support those writers. It is not a fix; it is a refusal.
+- **Non-Latin text is refused, not understood.** The tokenizer still only sees `a-z`, so Arabic, Hebrew, Cyrillic and Chinese text all have zero words and are turned away with `not_enough_words`. MF07 now "holds" because of that, not because the system handles it. It is an honest "we can't score this" instead of an automatic AI accusation, but writers in those scripts still get no service. Accented Latin text is also partly miscounted (the tokenizer splits "compré" into "compr").
 - RQ06, a row that tests a malformed `creator_id`, is now refused for a different reason (its text has three words), so it no longer exercises the `creator_id` check. I left the row alone rather than rewrite the attack set.
 - The 10,000-character cap is generous (the detector reads about 300 words); it exists so oversized input is refused visibly instead of being silently truncated.
 
@@ -987,11 +996,11 @@ It did not fully work. **MF07** (Arabic, one sentence) is still labelled AI at 0
 
 **Criterion 1 (4 of 10 of my own pieces accused) and criterion 2 (spread 0.171 vs 0.20), plus FP02–FP05, EV05 and PI02.** These are all signal one: GPT-2 perplexity reads formal, summarising prose as AI because it is predictable, and signal two agrees because plain careful writing has even sentences and little punctuation variety. What I'd do: replace or supplement the perplexity signal with one that doesn't equate "predictable" with "machine" (for example, comparing against a reference corpus of formal human writing), and re-weight toward the signal that separates my texts better, which on my own data is the style signal (0.224 gap against 0.136). I stopped because that is a redesign of the core measurement, not a patch, and because any re-weighting changes the attack rows in ways I'd need a full re-run to understand. I chose the smaller, safer fix for this unit rather than guess.
 
-**MF07 and the one-sentence default.** `sentence_length_spread` returns 0.0 for a single sentence, so every one-sentence text (in any language) starts from a style score near 0.6 and a one-sentence non-Latin text scores exactly 1.0. What I'd do: return a neutral value for single-sentence text instead of the AI-ish end. I stopped because that is a second change to the same signal, and I wanted the before/after comparison to isolate one cause.
+**Non-Latin writers and the one-sentence default (MF07 held, but for the wrong reason).** Two things are still wrong in signal two: `words()` only sees `a-z`, and `sentence_length_spread` returns 0.0 for a single sentence, so every one-sentence text starts from a style score near 0.6. The route check currently hides both by refusing non-Latin text. What I'd do: fix the tokenizer *and* make one-sentence text score neutral, as one change, so non-Latin writers are scored instead of refused. I stopped because my measurement showed the tokenizer fix alone makes MF07 worse (see The Improvement), so the two have to ship together, and that is a second change.
 
 **Criterion 4 (appeals).** `/appeal` needs to generate and return a unique appeal ID, and I'd return `pending_review` to match the criterion (or revise the criterion's wording, since `under_review` is used consistently elsewhere; the ID gap is the real one). I stopped because it is independent of the detection problem and I chose to spend this unit on the larger failure mode.
 
-**Held only by the disagreement rule.** FP06, FP07, EV01, EV08 and MF08 (before the length cap) all landed on `unsure` only because the two signals were more than 0.40 apart. That rule is covering for signal one rather than the signals being right.
+**Held only by the disagreement rule.** FP06, FP07, EV01 and EV08 all landed on `unsure` only because the two signals were more than 0.40 apart. That rule is covering for signal one rather than the signals being right.
 
 **The per-IP rate limit** can be evaded by an attacker with many addresses, and the limiter counts live in memory, so a restart forgets them.
 
