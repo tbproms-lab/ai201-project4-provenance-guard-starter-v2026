@@ -89,6 +89,17 @@ AI_THRESHOLD = 0.65
 # prints the bands; the reachable range is a different question.
 
 
+# ─── Input limits (Unit 8 improvement) ───────────────────────────────────────
+# Text longer than this is refused (413). The detector only reads the first
+# DETECTOR_MAX_TOKENS tokens anyway, so anything past this is never scored.
+MAX_TEXT_CHARS = 10_000
+
+# Text with fewer words than this is refused (400): one repeated word, emoji,
+# or a script the style signal can't tokenise. Five lets "Went for a run. Legs
+# hurt. Worth it." (a genuine short human submission) through.
+MIN_WORDS = 5
+
+
 # ─── Rate limiting (UNIT 8) ──────────────────────────────────────────────────
 # Off in unit 7. You turn it on and choose the numbers in unit 8, Milestone 1.
 #

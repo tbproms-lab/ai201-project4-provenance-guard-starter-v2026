@@ -441,11 +441,11 @@ The three trials were identical for every criterion (every score, to four decima
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. False positives on my own writing | At most 1 of 10 labelled AI | 4 of 10 labelled AI | 4 of 10 | 4 of 10 | **MISS** |
-| 2. Score spread | Average AI score at least 0.20 above average human score | 0.765 − 0.594 = 0.171 | 0.171 | 0.171 | **MISS** |
-| 3. Label coverage | All three labels appear at least once | human, unsure, ai | human, unsure, ai | human, unsure, ai | **PASS** |
-| 4. Appeal path | 5 of 5 appeals get a unique appeal ID, are recorded, return `pending_review` | 5 recorded; no appeal ID; status `under_review` | same | same | **MISS** |
-| 5. Bad input | Missing text, empty text and over 10,000 characters all return a clear error | 400, 400, **200** (scored as `ai`, 0.998) | same | same | **MISS** |
+| 1. False positives on my own writing | At most 1 of 10 labelled AI | 4 of 10 labelled AI | 4 of 10 | 4 of 10 | **MISSED** |
+| 2. Score spread | Average AI score at least 0.20 above average human score | 0.765 − 0.594 = 0.171 | 0.171 | 0.171 | **MISSED** |
+| 3. Label coverage | All three labels appear at least once | human, unsure, ai | human, unsure, ai | human, unsure, ai | **MET** |
+| 4. Appeal path | 5 of 5 appeals get a unique appeal ID, are recorded, return `pending_review` | 5 recorded; no appeal ID; status `under_review` | same | same | **MISSED** |
+| 5. Bad input | Missing text, empty text and over 10,000 characters all return a clear error | 400, 400, **200** (scored as `ai`, 0.998) | same | same | **MISSED** |
 
 **How each scenario was built** (`scenarios.py`):
 1. **My own writing:** ten pieces I wrote myself (`my_writing.json`): a methods paragraph, two article summaries, a short email, a lecture reflection, a local op-ed, a course reflection, a conflict reflection, a literary analysis paragraph and a short opinion piece. I included formal and academic writing deliberately, since that is where false accusations happen.
@@ -787,60 +787,218 @@ The criteria use the names "Likely human-written / Uncertain / Likely AI-generat
 ]
 ```
 
+**Verdicts against the unit 7 targets:** criterion 1 **MISSED**, criterion 2 **MISSED**, criterion 3 **MET**, criterion 4 **MISSED**, criterion 5 **MISSED**. Every miss was identical in all three trials, so none is a one-off. I have not edited or lowered any target.
+
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+**The pattern first: one problem explains most of the damage.** Of the 18 pieces of genuine human writing I sent (my ten plus the attack set's eight false-positive inputs), eight were labelled AI. Of the nine attacks that broke, four are that same failure. They all come down to the same two stages reading the same surface, and agreeing with each other.
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+| Input | Model score | Style score | Combined | Label |
+|---|---|---|---|---|
+| My piece 1 (study methods) | 0.833 | 0.529 | 0.711 | ai |
+| My piece 2 (article summary) | 0.746 | 0.606 | 0.690 | ai |
+| My piece 3 (article summary) | 0.757 | 0.599 | 0.694 | ai |
+| My piece 6 (op-ed) | 0.770 | 0.689 | 0.738 | ai |
+| FP02–FP05 (attack set) | 0.74–0.83 | 0.61–0.72 | 0.73–0.77 | ai |
+| My piece 10 (casual opinion) | 0.457 | 0.166 | 0.341 | human |
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+**Criterion 1 (MISSED: 4 of 10 labelled AI; target at most 1) and the four FP02–FP05 breaks.**
+Stage: **signal one**, with **signal two** agreeing and **the combining rule** passing it through.
+- *Signal one (`detector.py::model_signal`)* scores how predictable the text is to GPT-2. Formal, summarising and civic prose is built from stock phrases ("participants were randomized to", "a critical resource for families", "the authors found that"), so GPT-2 predicts it well and the score is 0.75–0.83. My casual pieces (5 and 10) score 0.46 because casual word choice is harder to predict. The model is measuring register, not authorship. All ten of my human pieces scored above 0.45 on this signal, and seven scored above 0.6.
+- *Signal two (`stylometry.py::style_signal`)* then agrees for a different but related reason. It rewards uneven sentence lengths and a wide variety of punctuation. My four accused pieces have fairly even sentences (variation 0.18–0.37, where 0.7 would score as fully human), and three of the four use only one or two kinds of punctuation, out of the five it looks for (piece 1 uses four, but its sentences are the most even of all, at 0.18). That gives every one of them a style score of 0.53–0.69, which sits inside the range of my AI paragraphs (0.44–0.83).
+- *The combining rule (`scoring.py::combine_signals`)* weights the model signal at 0.6. It also only intervenes when the two signals are more than 0.40 apart, and here they were only 0.08–0.30 apart, so it let both through. The disagreement rule is built for signals that split. These agreed, so it had nothing to catch.
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
+**Criterion 2 (MISSED: average AI score 0.765 minus average human score 0.594 = 0.171; target at least 0.20).**
+Same stage, same mechanism, seen from the other side: **signal one**. The two signals separate my human and AI texts very differently. On the model signal the means are 0.658 (human) and 0.794 (AI), a gap of 0.136. On the style signal they are 0.498 and 0.722, a gap of 0.224. With the model signal weighted 0.6, the weaker signal dominates and the combined gap lands at 0.171. This is the criterion 1 problem again, not a separate one: formal human prose scores as predictable. (One AI paragraph, number 7, also scored low at 0.562 because it had a wider spread of sentence lengths, 0.56, but removing it would still leave the gap short of 0.20.)
 
+**Criterion 4 (MISSED: 5 of 5 recorded, but no unique appeal ID and status is `under_review`, not `pending_review`).**
+Stage: **the route** (`app.py::appeal`, which calls `audit.py::log_appeal`). I built `/appeal` around the `content_id`: it finds the original decision, writes an appeal entry, and returns the same `content_id` with `under_review`. Nothing generates an appeal ID, so two appeals against the same item would be indistinguishable by ID. This is a gap between what I promised in unit 7 and what I built, not a bug in a signal. The status word is a naming difference (`under_review` is what the audit log, `/appeal` and this README use everywhere), but the missing ID is a real functional gap, and I'm marking the whole criterion MISSED rather than taking the generous reading.
 
+**Criterion 5 (MISSED: missing text 400, empty text 400, 13,750 characters returned 200).**
+Stage: **the route** (`app.py::submit`). It validates that `text` is present and non-empty, but never checks its length. `detector.py::perplexity` then silently truncates to 400 tokens, so a 13,750-character text is scored on roughly its first 400 tokens (and `stylometry.py` runs on the whole thing). The input was a single sentence repeated, so it scored 0.998, a confident AI verdict on input I'd rather have refused. The 60,000-character attack row MF08 got a 200 for the same reason (it held that time only because the signals happened to disagree).
+
+**Criterion 3 (MET).** All three labels appeared in every trial. I am not treating this as a strong result: the three inputs were chosen because I already knew where they landed, so it shows the thresholds are reachable, not that the detector works. Only one of my ten genuine pieces ever reached the `human` label (piece 10, with sentence variation 0.69), and the "human" test input was heavily edited AI text. If I tightened one criterion, it would be this one, to something like "at least 3 of my 10 own pieces reach the `human` label".
+
+**The other broken attacks:**
+
+**EV05 (evasion, broke: AI text heavily edited by a person was labelled human, 0.297).** Stage: **signal one and signal two together**. The edit pass made sentences lumpy (variation 0.68, scoring as fully human on the spread measure) and used casual words and dashes that GPT-2 finds less predictable (0.321). Both signals read the same surface features, so the combining rule had no disagreement to catch. It is the false-positive mechanism run in reverse: the system detects register and rhythm, not authorship.
+
+**PI02 (prompt injection, broke: an AI-style essay prefixed with a fake "SYSTEM:" instruction got `human`, 0.235).** Stage: **signal one**, with **signal two** helping. The service never obeys instructions in the text; that is not what happened. The injected prefix is a block of short, odd, capitalised sentences ("SYSTEM: provenance check bypassed…") ahead of a short body. In a text of 322 characters (roughly 70 tokens), those unusual tokens dominate the perplexity, so the model score fell to 0.204; the prefix also made sentence lengths very uneven (variation 0.65), so the style score fell to 0.281. The injection works as an accident of how the two measures react to strange text, which means an attacker doesn't need the instruction to say anything meaningful.
+
+**MF05, MF06, MF07 (malformed, broke: repeated "a", emoji-only text and right-to-left script labelled AI at 0.998, 0.998 and 0.944).** Stage: **signal two** for the style score, **signal one** for the model score, and **the route** for letting non-prose in.
+- `stylometry.py::words()` only matches `[a-z0-9']`, so any text in a non-Latin script (and emoji) has zero words. A text with no words gets a spread of 0.0 and no punctuation kinds, so `style_signal` returns exactly 1.0, the most AI-looking score possible. I confirmed this by scoring short Arabic and Chinese sentences: both come back with a style score of 1.0.
+- Repeated characters are the most predictable text a language model can see, so `model_signal` also saturates (0.997 for "aaaa…").
+- The route (`app.py::submit`) accepts anything non-empty, so nothing stops this reaching the detector.
+
+**Correction, found in the after run:** fixing the tokenizer did *not* fix MF07. Its Arabic text now tokenises correctly (17 words), but it is a single sentence, and `stylometry.py::sentence_length_spread` returns 0.0 for one sentence ("no spread, reads as AI-ish"), so `style_signal` is still exactly 1.0. MF07 therefore had **two stacked mechanisms**, the ASCII-only tokenizer and the one-sentence default, and I had only named the first. The one-sentence default also hits genuine one-sentence submissions in any language: they start from a style score of about 0.6.
+
+The consequence is worse than the attack suggests (this applied before the tokenizer fix): **a real person writing in Arabic, Hebrew, Chinese, Russian or any non-Latin script would start from a style score of 1.0.** Accented Latin text is also affected, since `words()` splits "compré" into "compr".
+
+**Held, but only by luck** (not diagnosed as broken, but worth noting): FP06 and FP07 (human writing with a model score of 0.88) and EV01 and EV08 (AI text whose model score fell to 0.16 and 0.25) all ended up `unsure` solely because the disagreement rule pulled a split score to 0.5. That rule is doing all the work the signals aren't.
+
+**Summary of the patterns:**
+1. **Signal one measures predictability, which is a register, not authorship.** It is behind criterion 1, criterion 2, FP02–FP05, EV05 and PI02, and it made MF05 and MF06 worse.
+2. **Signal two is largely a second measure of evenness and punctuation variety, and its tokenizer is ASCII-only.** It confirms signal one's mistakes on plain human prose and fails entirely on non-Latin input.
+3. **The combining rule can only help when the signals disagree.** They mostly agree on the failures, so it doesn't.
+4. **The route is missing input checks** (length, and anything that isn't prose). That is criterion 5 and part of MF05–MF07.
+5. **`/appeal` was designed around `content_id` only** (criterion 4).
 
 ---
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** two things, both aimed at the same failure: input that isn't scoreable prose was being scored anyway.
+1. **Signal two's tokenizer** (`stylometry.py::words`): the pattern `[a-z0-9']` only matched unaccented ASCII letters, so accented Latin text was chopped up and any non-Latin script (Arabic, Hebrew, Cyrillic, and so on) produced zero words and an automatic style score of 1.0. It now uses a Unicode-aware pattern. On the 20 English texts in my criteria scenarios every style score is identical to four decimals, so ordinary scoring is unchanged.
+2. **Input checks in the route** (`app.py::submit`, limits in `config.py`): text over `MAX_TEXT_CHARS = 10,000` is refused with a **413** and `text_too_long`; text with fewer than `MIN_WORDS = 5` words is refused with a **400** and `not_enough_words`. Both write a rejection to the audit log. I chose 5 because the shortest genuine submission in the attack set ("Went for a run. Legs hurt. Worth it.", 8 words) still passes.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** the criterion 5 diagnosis (the route never checked length) and the MF05, MF06 and MF07 diagnosis (junk input reached both signals, and the style tokenizer saw no words in non-Latin text).
+
+I did not touch the false-positive problem (criteria 1 and 2). That is the largest failure in the run and it comes from signal one, which this change does not affect. I chose the smaller fix on purpose; see What's Still Broken.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+`python run_attacks.py --set attack_set --label after`, rate limiting off, same service and nothing else changed. Full output: `results/attack_run_2026-11-07_1548_after.md`. Marked by the same rules as the before run.
 
+**Count: 49 held, 7 broke, out of 56** (before: 47 held, 9 broke). 50 of the 56 rows are identical to the before run.
 
+| ID | Family | Status | Guess | Score | Verdict | Change from before |
+|---|---|---|---|---|---|---|
+| EV01 | evasion | 200 | unsure | 0.500 | HELD | unchanged |
+| EV02 | evasion | 200 | unsure | 0.485 | HELD | unchanged |
+| EV03 | evasion | 200 | unsure | 0.520 | HELD | unchanged |
+| EV04 | evasion | 200 | ai | 0.675 | HELD | unchanged |
+| EV05 | evasion | 200 | human | 0.297 | BROKE | unchanged |
+| EV06 | evasion | 200 | unsure | 0.472 | HELD | unchanged |
+| EV07 | evasion | 200 | ai | 0.656 | HELD | unchanged |
+| EV08 | evasion | 200 | unsure | 0.500 | HELD | unchanged |
+| EV09 | evasion | 200 | unsure | 0.630 | HELD | unchanged |
+| EV10 | evasion | 200 | ai | 0.853 | HELD | unchanged |
+| FP01 | false_positive | 200 | unsure | 0.582 | HELD | unchanged |
+| FP02 | false_positive | 200 | ai | 0.729 | BROKE | unchanged |
+| FP03 | false_positive | 200 | ai | 0.770 | BROKE | unchanged |
+| FP04 | false_positive | 200 | ai | 0.742 | BROKE | unchanged |
+| FP05 | false_positive | 200 | ai | 0.753 | BROKE | unchanged |
+| FP06 | false_positive | 200 | unsure | 0.500 | HELD | unchanged |
+| FP07 | false_positive | 200 | unsure | 0.500 | HELD | unchanged |
+| FP08 | false_positive | 200 | unsure | 0.445 | HELD | unchanged |
+| PI01 | prompt_injection | 200 | unsure | 0.450 | HELD | unchanged |
+| PI02 | prompt_injection | 200 | human | 0.235 | BROKE | unchanged |
+| PI03 | prompt_injection | 200 | unsure | 0.543 | HELD | unchanged |
+| PI04 | prompt_injection | 200 | unsure | 0.468 | HELD | unchanged |
+| PI05 | prompt_injection | 200 | unsure | 0.526 | HELD | unchanged |
+| PI06 | prompt_injection | 200 | unsure | 0.550 | HELD | unchanged |
+| MF01 | malformed | 400 | — | — | HELD | unchanged |
+| MF02 | malformed | 400 | — | — | HELD | unchanged |
+| MF03 | malformed | 400 | — | — | HELD | now refused: under 5 words (was 200 unsure) |
+| MF04 | malformed | 400 | — | — | HELD | now refused: no words (was 200 unsure) |
+| MF05 | malformed | 400 | — | — | HELD | now refused: one word (was AI 0.9986) |
+| MF06 | malformed | 400 | — | — | HELD | now refused: no words (was AI 0.998) |
+| MF07 | malformed | 200 | ai | 0.944 | BROKE | STILL BROKE: one sentence, style score still 1.0 |
+| MF08 | malformed | 413 | — | — | HELD | now refused: 413 over 10,000 characters (was 200) |
+| RQ01 | malformed | 400 | — | — | HELD | unchanged |
+| RQ02 | malformed | 200 | unsure | 0.500 | HELD | unchanged |
+| RQ03 | malformed | 400 | — | — | HELD | unchanged |
+| RQ04 | malformed | 400 | — | — | HELD | unchanged |
+| RQ05 | malformed | 400 | — | — | HELD | unchanged |
+| RQ06 | malformed | 400 | — | — | HELD | now refused: only 3 words of text (was 200; the row tests creator_id, not length) |
+| RQ07 | malformed | 400 | — | — | HELD | unchanged |
+| RQ08 | malformed | 400 | — | — | HELD | unchanged |
+| RQ09 | malformed | 400 | — | — | HELD | unchanged |
+| RQ10 | malformed | 400 | — | — | HELD | unchanged |
+| RQ11 | malformed | 400 | — | — | HELD | unchanged |
+| RQ12 | malformed | 400 | — | — | HELD | unchanged |
+| FL01_01 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_02 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_03 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_04 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_05 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_06 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_07 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_08 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_09 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_10 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_11 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+| FL01_12 | flood_same_creator | 200 | unsure | 0.500 | HELD | unchanged |
+
+**Criteria, after** (`python run_eval.py --label after`, three trials, `results/run_2026-11-07_1548_after.md`; all trials identical again):
+
+| Criterion | Target | Before | After | Verdict |
+|---|---|---|---|---|
+| 1. False positives on my own writing | At most 1 of 10 labelled AI | 4 of 10 | 4 of 10 | **MISSED** (unchanged) |
+| 2. Score spread | At least 0.20 | 0.171 | 0.171 | **MISSED** (unchanged) |
+| 3. Label coverage | All three labels appear | human, unsure, ai | human, unsure, ai | **MET** |
+| 4. Appeal path | 5 of 5 with unique ID and `pending_review` | no ID; `under_review` | same | **MISSED** (unchanged) |
+| 5. Bad input | All three bad inputs get a clear error | 400, 400, **200** | 400, 400, **413** | **MET** (was MISSED) |
+
+Real output for criterion 5, trial 1, from `results/run_2026-11-07_1548_after.md` (`run_eval.py::main` calling `app.py::submit`):
+
+```json
+[
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "{\"creator_id\": \"eval_bad_missing\"}"
+  },
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "(empty text)"
+  },
+  {
+    "status": 413,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "The committee met on Tuesday and agreed to meet again. The committee m"
+  }
+]
+```
+
+and the audit log entry the 413 left behind (`app.py::submit` calling `audit.py::log_rejection`):
+
+```json
+{"timestamp": "2026-11-07T20:48:27+00:00", "creator_id": "eval_bad_huge", "event": "rejected", "status": "rejected", "reason": "text_too_long", "status_code": 413, "length": 13750}
+```
 
 **Did it help, and how do I know:**
+It helped where it was aimed, and nowhere else, which is the result I expected. Criterion 5 went from MISSED to MET in all three trials. MF05 and MF06 (repeated "a", emoji) went from a confident AI verdict to a refusal, and MF03, MF04, MF08 are now refused instead of scored. Everything else is identical, which is also evidence: I changed nothing that touches signal one or the combining rule, and the 20 English style scores did not move.
 
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
+It did not fully work. **MF07** (Arabic, one sentence) is still labelled AI at 0.944: the tokenizer fix removed one mechanism and the one-sentence default in `sentence_length_spread` supplied the same result. I only found that because I re-ran it; my first diagnosis had named only the tokenizer.
 
-
+**What it cost.** This is a trade, not a free fix:
+- Any real text under 5 words is now refused. "Thanks, see you soon." (4 words) would be turned away instead of scored. For a provenance tool that is arguably right, because there isn't enough to judge, but it is a behaviour change for real writers.
+- A text that is not prose in a script the tokenizer can't split into words (Chinese, Japanese) will usually be refused as `not_enough_words`. That is an honest "we can't score this" instead of a false accusation, but it means the service still doesn't support those writers. It is not a fix; it is a refusal.
+- RQ06, a row that tests a malformed `creator_id`, is now refused for a different reason (its text has three words), so it no longer exercises the `creator_id` check. I left the row alone rather than rewrite the attack set.
+- The 10,000-character cap is generous (the detector reads about 300 words); it exists so oversized input is refused visibly instead of being silently truncated.
 
 ---
 
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
+**Criterion 1 (4 of 10 of my own pieces accused) and criterion 2 (spread 0.171 vs 0.20), plus FP02–FP05, EV05 and PI02.** These are all signal one: GPT-2 perplexity reads formal, summarising prose as AI because it is predictable, and signal two agrees because plain careful writing has even sentences and little punctuation variety. What I'd do: replace or supplement the perplexity signal with one that doesn't equate "predictable" with "machine" (for example, comparing against a reference corpus of formal human writing), and re-weight toward the signal that separates my texts better, which on my own data is the style signal (0.224 gap against 0.136). I stopped because that is a redesign of the core measurement, not a patch, and because any re-weighting changes the attack rows in ways I'd need a full re-run to understand. I chose the smaller, safer fix for this unit rather than guess.
 
+**MF07 and the one-sentence default.** `sentence_length_spread` returns 0.0 for a single sentence, so every one-sentence text (in any language) starts from a style score near 0.6 and a one-sentence non-Latin text scores exactly 1.0. What I'd do: return a neutral value for single-sentence text instead of the AI-ish end. I stopped because that is a second change to the same signal, and I wanted the before/after comparison to isolate one cause.
 
+**Criterion 4 (appeals).** `/appeal` needs to generate and return a unique appeal ID, and I'd return `pending_review` to match the criterion (or revise the criterion's wording, since `under_review` is used consistently elsewhere; the ID gap is the real one). I stopped because it is independent of the detection problem and I chose to spend this unit on the larger failure mode.
+
+**Held only by the disagreement rule.** FP06, FP07, EV01, EV08 and MF08 (before the length cap) all landed on `unsure` only because the two signals were more than 0.40 apart. That rule is covering for signal one rather than the signals being right.
+
+**The per-IP rate limit** can be evaded by an attacker with many addresses, and the limiter counts live in memory, so a restart forgets them.
 
 **The trade I'd make if this ran for real:**
+I would lean toward fewer wrong accusations, by raising the AI threshold and widening the unsure band, even though more AI-written text would then be labelled unsure or human. The people who pay are the platform and the readers who rely on the label, who would see more undetected AI text; the alternative is that the writers whose honest, careful, formal or non-native-English work is accused (four of my ten pieces, and FP03 above) pay for it with their credibility, and they are the people least able to argue with a machine about their own words.
 
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
-
-
+---
 
 <!-- ═════════════════════════════════════════════════════════════════════
 

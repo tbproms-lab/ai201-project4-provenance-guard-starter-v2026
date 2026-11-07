@@ -219,6 +219,24 @@ def submit():
         audit.log_rejection(creator_id=creator_id, reason="missing_or_empty_text", status_code=400)
         return jsonify({"error": "bad_request", "message": "Send JSON with a non-empty \"text\"."}), 400
 
+    # Refuse what isn't scoreable prose, instead of scoring it. An over-long
+    # text is silently truncated by the detector; a text with almost no words
+    # (one repeated word, emoji, an unsupported script) drives both signals to
+    # their most AI-looking values and would be a confident accusation.
+    if len(text) > config.MAX_TEXT_CHARS:
+        audit.log_rejection(creator_id=creator_id, reason="text_too_long", status_code=413, length=len(text))
+        return jsonify({
+            "error": "text_too_long",
+            "message": f"Text is too long ({len(text)} characters). The limit is {config.MAX_TEXT_CHARS}.",
+        }), 413
+    if len(stylometry.words(text)) < config.MIN_WORDS:
+        audit.log_rejection(creator_id=creator_id, reason="not_enough_words", status_code=400)
+        return jsonify({
+            "error": "bad_request",
+            "message": f"We can't score this text: it needs at least {config.MIN_WORDS} words of "
+                       f"ordinary prose in a script we support.",
+        }), 400
+
     # One real signal (tested first with: python detector.py "some text").
     try:
         model_score = detector.model_signal(text)
