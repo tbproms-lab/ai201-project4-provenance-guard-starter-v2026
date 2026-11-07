@@ -309,25 +309,22 @@ The log is append-only: the original `decided` entry is untouched and the appeal
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 5 per minute, 50 per day per `creator_id`; plus a looser ceiling of 15 per minute, 150 per day per IP address.
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
+A real writer submits a few pieces an hour. Even revising one draft repeatedly, five in a minute is more than a person can read and rework, and 50 a day is far beyond a normal day of writing. A script mapping my thresholds needs hundreds or thousands of probes. At 50 a day it gets about 2 probes an hour averaged over a day, which makes mapping the 0.35/0.65 boundaries impractically slow. I rejected 10/200 (the starter placeholder) because 200 probes a day is enough to find a threshold, and 3/20 because a writer submitting a few pieces in one sitting could get locked out. Each scoring call also costs 1–2 seconds of local model time, so the cap protects capacity as well as thresholds.
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+**What a caller counts as:** both. The primary limit is per `creator_id`, so a shared household or dorm network doesn't starve one writer. But `creator_id` comes from the request body, so a script can rotate it for free and never hit the per-creator limit. A second limit per IP address (3x looser, so shared networks still work) closes that hole: in my test, ten submissions from ten different creator_ids on one address were stopped by the IP ceiling. The remaining weakness is an attacker with many IP addresses; in-memory storage also forgets counts on restart.
 
 **The run of status codes when I pushed past it:**
 
-<!-- python run_attacks.py --flood 15 -->
-
+```
+200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ```
 
-```
+(`python run_attacks.py --flood 15 --url http://127.0.0.1:5001`; I used port 5001 because macOS AirPlay Receiver occupies 5000 and answers 403. Report written to `results/flood_2026-11-07_1507.md`.)
+
+**Rejections are logged too.** Rate-limited requests, missing/empty text (400), too-short text (400) and detector failures (503) each write a `rejected` entry to the audit log with a `reason`, so an attack that is turned away still leaves a trace.
 
 ---
 

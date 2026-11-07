@@ -87,7 +87,7 @@ if config.RATE_LIMITING_ENABLED:
         return creator if isinstance(creator, str) and creator.strip() else get_remote_address()
 
     limiter = Limiter(
-        key_func=rate_limit_key,
+        key_func=get_remote_address,  # default: count by IP
         app=app,
         storage_uri=config.RATE_LIMIT_STORAGE,
         default_limits=[],
@@ -107,6 +107,7 @@ if config.RATE_LIMITING_ENABLED:
             creator_id=payload.get("creator_id", "unknown"),
             reason="rate_limited",
             limit=str(exc.description),
+            ip=request.remote_addr,
         )
         return jsonify({
             "error": "rate_limited",
@@ -151,7 +152,8 @@ def health():
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
 @app.post("/submit")
-# @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
+@limiter.limit(f"{config.RATE_LIMIT_IP_PER_MINUTE}/minute;{config.RATE_LIMIT_IP_PER_DAY}/day")
+@limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day", key_func=rate_limit_key if config.RATE_LIMITING_ENABLED else None)
 def submit():
     """
     Take a piece of text, decide about it, log the decision, answer.
@@ -210,7 +212,11 @@ def submit():
     text = payload.get("text")
     creator_id = payload.get("creator_id", "unknown")
 
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        creator_id = "unknown"
+
     if not isinstance(text, str) or not text.strip():
+        audit.log_rejection(creator_id=creator_id, reason="missing_or_empty_text", status_code=400)
         return jsonify({"error": "bad_request", "message": "Send JSON with a non-empty \"text\"."}), 400
 
     # One real signal (tested first with: python detector.py "some text").
@@ -218,8 +224,10 @@ def submit():
         model_score = detector.model_signal(text)
         style_score = stylometry.style_signal(text)
     except ValueError as exc:  # too short to score
+        audit.log_rejection(creator_id=creator_id, reason="text_too_short", status_code=400, detail=str(exc))
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
     except detector.DetectorUnavailable as exc:
+        audit.log_rejection(creator_id=creator_id, reason="detector_unavailable", status_code=503, detail=str(exc))
         return jsonify({"error": "detector_unavailable", "message": str(exc)}), 503
 
     # Log the decision. The content_id is what /appeal needs later.
