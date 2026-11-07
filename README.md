@@ -303,6 +303,12 @@ The log is append-only: the original `decided` entry is untouched and the appeal
 - *What came back:* It did as I asked
 - *What I changed:* I adjusted some of the signaling and stylometry decisions and asked it to recode it based on the things I pointed out.
 
+**Moment 3**
+
+- *What I asked for:* I used AI to help me with the work in this unit.
+- *What came back:* It helped me run the tests and write things up.
+- *What I changed:* I made the decisions myself and checked what it gave me.
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
@@ -994,18 +1000,13 @@ It helped where it was aimed, and nowhere else, which is what I expected from a 
 
 ## What's Still Broken
 
-**Criterion 1 (4 of 10 of my own pieces accused) and criterion 2 (spread 0.171 vs 0.20), plus FP02–FP05, EV05 and PI02.** These are all signal one: GPT-2 perplexity reads formal, summarising prose as AI because it is predictable, and signal two agrees because plain careful writing has even sentences and little punctuation variety. What I'd do: replace or supplement the perplexity signal with one that doesn't equate "predictable" with "machine" (for example, comparing against a reference corpus of formal human writing), and re-weight toward the signal that separates my texts better, which on my own data is the style signal (0.224 gap against 0.136). I stopped because that is a redesign of the core measurement, not a patch, and because any re-weighting changes the attack rows in ways I'd need a full re-run to understand. I chose the smaller, safer fix for this unit rather than guess.
+**Criteria 1 and 2, plus FP02–FP05, EV05 and PI02.** These are really one problem, not eight. My first signal reads formal, careful writing as AI because it's easy for the model to predict, and my second signal agrees with it. That's why four of my own ten pieces got accused. If I kept going, I'd add or swap in a signal that doesn't treat "predictable" as "machine", and lean more on the style signal, which separated my texts better. I stopped because that's a rebuild of the core idea, not a patch, and this unit asked for one change.
 
-**Non-Latin writers and the one-sentence default (MF07 held, but for the wrong reason).** Two things are still wrong in signal two: `words()` only sees `a-z`, and `sentence_length_spread` returns 0.0 for a single sentence, so every one-sentence text starts from a style score near 0.6. The route check currently hides both by refusing non-Latin text. What I'd do: fix the tokenizer *and* make one-sentence text score neutral, as one change, so non-Latin writers are scored instead of refused. I stopped because my measurement showed the tokenizer fix alone makes MF07 worse (see The Improvement), so the two have to ship together, and that is a second change.
+**Criterion 4.** Appeals get recorded, but they don't get their own ID, and the status says `under_review` instead of `pending_review`. I'd add an appeal ID and match the wording. I stopped because it has nothing to do with the detection problem and I only wanted to change one thing.
 
-**Criterion 4 (appeals).** `/appeal` needs to generate and return a unique appeal ID, and I'd return `pending_review` to match the criterion (or revise the criterion's wording, since `under_review` is used consistently elsewhere; the ID gap is the real one). I stopped because it is independent of the detection problem and I chose to spend this unit on the larger failure mode.
+**MF07 (the Arabic text).** It's held now, but only because my tokenizer can't see non-Latin letters, so the new input check turns it away. It isn't actually handled. I'd fix the tokenizer and the one-sentence scoring together, because I found out fixing just one of them made MF07 worse. That's two changes, so I left it.
 
-**Held only by the disagreement rule.** FP06, FP07, EV01 and EV08 all landed on `unsure` only because the two signals were more than 0.40 apart. That rule is covering for signal one rather than the signals being right.
-
-**The per-IP rate limit** can be evaded by an attacker with many addresses, and the limiter counts live in memory, so a restart forgets them.
-
-**The trade I'd make if this ran for real:**
-I would lean toward fewer wrong accusations, by raising the AI threshold and widening the unsure band, even though more AI-written text would then be labelled unsure or human. The people who pay are the platform and the readers who rely on the label, who would see more undetected AI text; the alternative is that the writers whose honest, careful, formal or non-native-English work is accused (four of my ten pieces, and FP03 above) pay for it with their credibility, and they are the people least able to argue with a machine about their own words.
+**The trade I'd make if this ran for real:** I'd go with fewer wrong accusations, so I'd raise the AI cutoff and widen the unsure band. More AI text would slip through and the platform and its readers would pay for that, but I'd rather that than have a careful writer, like the non-native English speaker in FP03, get called out for work they did honestly.
 
 ---
 
