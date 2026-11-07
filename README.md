@@ -435,21 +435,356 @@ whose work got caught by it:
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+`python run_eval.py --label before`, three trials per scenario, nothing changed between them. Full output: `results/run_2026-11-07_1543_before.md`. Run with rate limiting **off** (`AI201_RATE_LIMITS=0`) because the eval sends about 120 requests from one address and my 15-per-minute per-IP ceiling would otherwise have returned 429 for most of them.
+
+The three trials were identical for every criterion (every score, to four decimals), as expected: nothing in either signal is random. So three matching runs are evidence that the result is stable, not that I skipped a step. (The appeals scenario differs only in its freshly generated `content_id`s.)
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. False positives on my own writing | At most 1 of 10 labelled AI | 4 of 10 labelled AI | 4 of 10 | 4 of 10 | **MISS** |
+| 2. Score spread | Average AI score at least 0.20 above average human score | 0.765 − 0.594 = 0.171 | 0.171 | 0.171 | **MISS** |
+| 3. Label coverage | All three labels appear at least once | human, unsure, ai | human, unsure, ai | human, unsure, ai | **PASS** |
+| 4. Appeal path | 5 of 5 appeals get a unique appeal ID, are recorded, return `pending_review` | 5 recorded; no appeal ID; status `under_review` | same | same | **MISS** |
+| 5. Bad input | Missing text, empty text and over 10,000 characters all return a clear error | 400, 400, **200** (scored as `ai`, 0.998) | same | same | **MISS** |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+**How each scenario was built** (`scenarios.py`):
+1. **My own writing:** ten pieces I wrote myself (`my_writing.json`): a methods paragraph, two article summaries, a short email, a lecture reflection, a local op-ed, a course reflection, a conflict reflection, a literary analysis paragraph and a short opinion piece. I included formal and academic writing deliberately, since that is where false accusations happen.
+2. **Spread:** the same ten pieces against ten AI-style paragraphs generated for this test (one per topic: time management, exercise, climate, and so on).
+3. **Coverage:** three inputs aimed at the three bands, taken from attack-set rows whose scores I'd already seen (EV05, FP01, EV10). Note the "human" input is AI text that was heavily edited, not genuine human writing; only one of my own ten pieces reached the human label.
+4. **Appeals:** `run_eval.py` was extended with an `"appeal": True` scenario type that submits, then appeals against the returned `content_id` and records the appeal response. I also confirmed in `logs/audit.jsonl` that all 15 appeals (5 per trial) were recorded.
+5. **Bad input:** three raw bodies: no `text` field, `text: ""`, and a 13,750-character text.
+
+The criteria use the names "Likely human-written / Uncertain / Likely AI-generated"; the service's labels are `human` / `unsure` / `ai`, and I mapped them one to one.
+
+**Real output from one trial** (Trial 1 of each scenario, copied from `results/run_2026-11-07_1543_before.md`, produced by `run_eval.py::main` calling `app.py::submit` and `app.py::appeal`). For criteria 1 and 2 the long `label` string is left out of each entry for length; it is in the results file.
+
+*Criterion 1 — my own writing:*
 
 ```json
+[
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7113,
+    "model_score": 0.8328,
+    "style_score": 0.5291,
+    "sent": "The current study examined the effect of cell phone use on the percent"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.6898,
+    "model_score": 0.7457,
+    "style_score": 0.6059,
+    "sent": "This article uses a meta-analysis to try and understand the effects of"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.6942,
+    "model_score": 0.7574,
+    "style_score": 0.5994,
+    "sent": "This study asks whether flipped classrooms actually improve student ac"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.6283,
+    "model_score": 0.6807,
+    "style_score": 0.5497,
+    "sent": "I would be happy to chat with you on Monday at 1pm. I would love to me"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.4549,
+    "model_score": 0.4586,
+    "style_score": 0.4493,
+    "sent": "Sitting in the University Chapel listening to Dr. U’s lecture, I first"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7378,
+    "model_score": 0.7702,
+    "style_score": 0.6893,
+    "sent": "The proposed replacement of the Buy Low grocery store on James Jackson"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.5296,
+    "model_score": 0.5507,
+    "style_score": 0.4979,
+    "sent": "As mentioned above, we dwelt a lot on how to analyze data in a reprodu"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.587,
+    "model_score": 0.624,
+    "style_score": 0.5316,
+    "sent": "When dealing with conflict, I used to shrink away from it because I’d "
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.5672,
+    "model_score": 0.7052,
+    "style_score": 0.3602,
+    "sent": "Karen’s mothering also extends to Gene when her anxieties about him ra"
+  },
+  {
+    "status": 200,
+    "guess": "human",
+    "confidence": 0.3406,
+    "model_score": 0.4572,
+    "style_score": 0.1657,
+    "sent": "If you open the ESPN app on any given occasion and read the “Top Headl"
+  }
+]
+```
 
+*Criterion 2 — the AI-style set (the human set is the same ten texts as criterion 1, with identical scores):*
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7849,
+    "model_score": 0.7757,
+    "style_score": 0.7988,
+    "sent": "The importance of effective time management cannot be overstated in to"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8064,
+    "model_score": 0.8378,
+    "style_score": 0.7593,
+    "sent": "Regular physical exercise offers numerous benefits for both physical a"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8471,
+    "model_score": 0.9124,
+    "style_score": 0.7492,
+    "sent": "Climate change represents one of the most pressing challenges facing h"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7737,
+    "model_score": 0.8675,
+    "style_score": 0.6331,
+    "sent": "Technology has fundamentally transformed the way people communicate, w"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7749,
+    "model_score": 0.7544,
+    "style_score": 0.8057,
+    "sent": "Reading is a valuable habit that contributes to personal growth and in"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7293,
+    "model_score": 0.7743,
+    "style_score": 0.6618,
+    "sent": "Effective leadership is essential for the success of any organization."
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.5621,
+    "model_score": 0.6409,
+    "style_score": 0.444,
+    "sent": "Sustainable travel has become an increasingly important consideration "
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8224,
+    "model_score": 0.8675,
+    "style_score": 0.7547,
+    "sent": "Education plays a crucial role in shaping the future of individuals an"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8166,
+    "model_score": 0.8058,
+    "style_score": 0.8327,
+    "sent": "Mental health is a fundamental component of overall well-being that de"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.737,
+    "model_score": 0.707,
+    "style_score": 0.7819,
+    "sent": "Entrepreneurship drives innovation and economic development by transfo"
+  }
+]
+```
+
+*Criterion 3 — label coverage:*
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "human",
+    "confidence": 0.2972,
+    "model_score": 0.3212,
+    "style_score": 0.2612,
+    "label": "We think this was probably written by a person.",
+    "sent": "Communication at work matters more than people say it does — and I mea"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.5817,
+    "model_score": 0.6175,
+    "style_score": 0.5279,
+    "label": "We can't tell whether this was written by a person or with help from AI. That's about the limits of our tools, not a judgment about you. If you'd like someone to look at it, you can appeal.",
+    "sent": "We got to the campsite about four. The pitch was fine, a bit sloped, b"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8525,
+    "model_score": 0.9792,
+    "style_score": 0.6624,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "The importance of effective communication in the workplace cannot be o"
+  }
+]
+```
+
+*Criterion 4 — appeals:*
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7849,
+    "model_score": 0.7757,
+    "style_score": 0.7988,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "The importance of effective time management cannot be overstated in to",
+    "content_id": "c_d0cdf498bac7",
+    "appeal_status": 200,
+    "appeal": {
+      "content_id": "c_d0cdf498bac7",
+      "message": "Thanks. Your appeal has been recorded and this item is now under review.",
+      "status": "under_review"
+    }
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8064,
+    "model_score": 0.8378,
+    "style_score": 0.7593,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "Regular physical exercise offers numerous benefits for both physical a",
+    "content_id": "c_e30e283addf9",
+    "appeal_status": 200,
+    "appeal": {
+      "content_id": "c_e30e283addf9",
+      "message": "Thanks. Your appeal has been recorded and this item is now under review.",
+      "status": "under_review"
+    }
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.8471,
+    "model_score": 0.9124,
+    "style_score": 0.7492,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "Climate change represents one of the most pressing challenges facing h",
+    "content_id": "c_ed7bcb1c4dca",
+    "appeal_status": 200,
+    "appeal": {
+      "content_id": "c_ed7bcb1c4dca",
+      "message": "Thanks. Your appeal has been recorded and this item is now under review.",
+      "status": "under_review"
+    }
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7737,
+    "model_score": 0.8675,
+    "style_score": 0.6331,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "Technology has fundamentally transformed the way people communicate, w",
+    "content_id": "c_19bd74026b8e",
+    "appeal_status": 200,
+    "appeal": {
+      "content_id": "c_19bd74026b8e",
+      "message": "Thanks. Your appeal has been recorded and this item is now under review.",
+      "status": "under_review"
+    }
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.7749,
+    "model_score": 0.7544,
+    "style_score": 0.8057,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "Reading is a valuable habit that contributes to personal growth and in",
+    "content_id": "c_40777f607b1f",
+    "appeal_status": 200,
+    "appeal": {
+      "content_id": "c_40777f607b1f",
+      "message": "Thanks. Your appeal has been recorded and this item is now under review.",
+      "status": "under_review"
+    }
+  }
+]
+```
+
+*Criterion 5 — bad input:*
+
+```json
+[
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "{\"creator_id\": \"eval_bad_missing\"}"
+  },
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "(empty text)"
+  },
+  {
+    "status": 200,
+    "guess": "ai",
+    "confidence": 0.9983,
+    "model_score": 0.9971,
+    "style_score": 1.0,
+    "label": "This looks like it may have been written with AI. We can get this wrong, so if you wrote it yourself, you can appeal and a person will take a look.",
+    "sent": "The committee met on Tuesday and agreed to meet again. The committee m"
+  }
+]
 ```
 
 **Diagnoses**

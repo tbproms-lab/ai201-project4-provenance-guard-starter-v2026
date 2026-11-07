@@ -128,6 +128,21 @@ def main():
                         "label": payload.get("label"),
                         "sent": preview,
                     })
+                    # An appeal scenario: appeal against the content_id that
+                    # just came back, and record the whole appeal response.
+                    if scenario.get("appeal") and response.status_code == 200:
+                        results[-1]["content_id"] = payload.get("content_id")
+                        try:
+                            a = requests.post(f"{args.url}/appeal", json={
+                                "content_id": payload.get("content_id"),
+                                "creator_id": body.get("creator_id"),
+                                "reasoning": "I wrote this myself.",
+                            }, timeout=args.timeout)
+                            results[-1]["appeal_status"] = a.status_code
+                            results[-1]["appeal"] = a.json() if a.content else {}
+                        except Exception as exc:  # noqa: BLE001
+                            results[-1]["appeal_status"] = None
+                            results[-1]["appeal"] = {"error": f"{type(exc).__name__}: {exc}"}
                 except Exception as exc:  # noqa: BLE001
                     results.append({"status": None, "error": f"{type(exc).__name__}: {exc}",
                                     "sent": preview})
